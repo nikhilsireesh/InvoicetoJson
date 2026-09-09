@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Section 6: design tokens. White/light surfaces, deep navy text —
+     never pure black, never a dark page background. */
+  --background: #ffffff;
+  --surface: #f7f8fc;
+  --foreground: #171b2e;
+
+  --primary: #2f5cff;       /* cobalt — primary actions */
+  --primary-light: #eaf0ff;
+  --secondary: #7c3aed;     /* violet — AI / extraction */
+  --secondary-light: #f1e9fe;
+  --accent: #06b6d4;        /* cyan — info / technology */
+  --accent-light: #e3f9fc;
+  --success: #10b981;       /* emerald — verified */
+  --success-light: #e7f9f1;
+  --warning: #f59e0b;       /* amber — needs review */
+  --warning-light: #fef3e2;
+  --danger: #f43f5e;        /* coral/red — errors */
+  --danger-light: #feecef;
+
+  --border: #e6e8f0;
+  --muted: #6b7280;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: "Plus Jakarta Sans", Inter, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+/* Visible focus states everywhere (Section 48) */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.font-mono-json {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}

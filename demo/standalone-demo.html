@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Invoice2JSON — Standalone Demo (Sample Data Only)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  :root {
+    --background:#ffffff; --surface:#f7f8fc; --foreground:#171b2e;
+    --primary:#2f5cff; --primary-light:#eaf0ff;
+    --secondary:#7c3aed; --secondary-light:#f1e9fe;
+    --accent:#06b6d4; --accent-light:#e3f9fc;
+    --success:#10b981; --success-light:#e7f9f1;
+    --warning:#f59e0b; --warning-light:#fef3e2;
+    --danger:#f43f5e; --danger-light:#feecef;
+    --border:#e6e8f0; --muted:#6b7280;
+  }
+  body { font-family:'Plus Jakarta Sans',system-ui,sans-serif; background:var(--background); color:var(--foreground); margin:0; }
+  .mono { font-family:'JetBrains Mono',ui-monospace,monospace; }
+  @keyframes floaty { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
+  @keyframes pulseSoft { 0%,100%{opacity:1} 50%{opacity:.45} }
+  .floaty { animation: floaty 5s ease-in-out infinite; }
+  .pulseSoft { animation: pulseSoft 1.4s ease-in-out infinite; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="banner" style="position:fixed;bottom:0;left:0;right:0;background:#171b2e;color:#fff;font-size:12px;text-align:center;padding:8px;z-index:50;font-family:'Plus Jakarta Sans',sans-serif;">
+  Standalone visual demo — runs entirely in this browser tab with fixed sample data. Real invoice extraction requires the full app (frontend + backend + your OpenAI key). See README.
+</div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef } = React;
+
+const SAMPLE = {
+  vendor: "ABC Technologies Pvt Ltd",
+  invoice_number: "INV-2026-1045",
+  invoice_date: "2026-09-01",
+  due_date: "2026-09-30",
+  currency: "INR",
+  subtotal: 25000,
+  tax: 4500,
+  total: 29500,
+  line_items: [
+    { description: "Laptop Stand", quantity: 5, unit_price: 2000, total: 10000 },
+    { description: "Wireless Keyboard", quantity: 5, unit_price: 3000, total: 15000 },
+  ],
+};
+
+function approxEq(a, b) {
+  const diff = Math.abs(a - b);
+  return diff <= 1 || diff <= Math.max(Math.abs(a), Math.abs(b)) * 0.02;
+}
+
+function verify(data) {
+  const checks = [];
+  checks.push({ id: "vendor", label: "Vendor detected", passed: !!data.vendor, severity: "error" });
+  checks.push({ id: "invnum", label: "Invoice number detected", passed: !!data.invoice_number, severity: "error" });
+  checks.push({ id: "total", label: "Total detected", passed: data.total !== null, severity: "error" });
+  checks.push({ id: "due", label: "Due date detected", passed: !!data.due_date, severity: "warning" });
+  checks.push({ id: "items", label: "Line items detected", passed: data.line_items.length > 0, severity: "warning" });
+  if (data.subtotal != null && data.tax != null && data.total != null) {
+    checks.push({ id: "tax_calc", label: "Tax calculation matches", passed: approxEq(data.subtotal + data.tax, data.total), severity: "error" });
+  }
+  const failErr = checks.some(c => c.severity === "error" && !c.passed);
+  const failWarn = checks.some(c => c.severity === "warning" && !c.passed);
+  return { status: (failErr || failWarn) ? "NEEDS_REVIEW" : "VERIFIED", checks };
+}
+
+function fmt(v, cur) {
+  if (v === null || v === undefined) return "—";
+  try { return new Intl.NumberFormat("en-IN", { style: "currency", currency: cur || "USD" }).format(v); }
+  catch { return `${cur || ""} ${v}`; }
+}
+
+const Icon = ({ name, className }) => {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (ref.current && window.lucide) {
+      ref.current.innerHTML = "";
+      const el = document.createElement("i");
+      el.setAttribute("data-lucide", name);
+      ref.current.appendChild(el);
+      window.lucide.createIcons({ nodes: [ref.current] });
+    }
+  }, [name]);
+  return <span ref={ref} className={className} style={{ display: "inline-flex" }} />;
+};
+
+function Header({ onUpload }) {
+  return (
+    <header className="sticky top-0 z-40 border-b" style={{ borderColor: "var(--border)", background: "rgba(255,255,255,.9)", backdropFilter: "blur(8px)" }}>
+      <div className="max-w-6xl mx-auto flex items-center justify-between px-6 py-3.5">
+        <div className="flex items-center gap-2.5">
+          <span className="h-9 w-9 rounded-xl flex items-center justify-center text-white" style={{ background: "linear-gradient(135deg,var(--primary),var(--secondary))" }}>
+            <Icon name="file-text" className="h-5 w-5" />
+          </span>
+          <span className="font-extrabold text-lg">Invoice2JSON</span>
+        </div>
+        <button onClick={onUpload} className="hidden sm:flex items-center gap-2 rounded-full text-white text-sm font-semibold px-4 py-2 shadow" style={{ background: "var(--primary)" }}>
+          <Icon name="upload" className="h-4 w-4" /> Upload Invoice
+        </button>
+      </div>
+    </header>
+  );
+}
+
+function Hero({ onUpload, onSample }) {
+  return (
+    <section className="relative overflow-hidden">
+      <div className="pointer-events-none absolute -left-32 -top-24 h-80 w-80 rounded-full opacity-[0.08] blur-3xl" style={{ background: "var(--primary)" }} />
+      <div className="pointer-events-none absolute -right-24 top-10 h-96 w-96 rounded-full opacity-[0.08] blur-3xl" style={{ background: "var(--secondary)" }} />
+      <div className="max-w-6xl mx-auto px-6 pt-16 pb-16 grid lg:grid-cols-[1.1fr_0.9fr] gap-10 items-center relative">
+        <div>
+          <span className="inline-flex items-center gap-1.5 rounded-full border text-xs font-semibold px-3 py-1" style={{ borderColor: "var(--border)", background: "var(--surface)", color: "var(--secondary)" }}>
+            <Icon name="sparkles" className="h-3.5 w-3.5" /> AI-powered extraction
+          </span>
+          <h1 className="mt-5 text-4xl sm:text-5xl font-extrabold tracking-tight leading-tight">Turn invoices into verified JSON.</h1>
+          <p className="mt-5 text-lg max-w-xl" style={{ color: "var(--muted)" }}>
+            Upload an invoice and automatically extract vendor details, payment totals, due dates, taxes, and line items in seconds.
+          </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <button onClick={onUpload} className="rounded-full text-white text-sm font-semibold px-6 py-3.5 shadow flex items-center gap-2" style={{ background: "linear-gradient(90deg,var(--primary),var(--secondary))" }}>
+              Upload Invoice <Icon name="arrow-right" className="h-4 w-4" />
+            </button>
+            <button onClick={onSample} className="rounded-full border text-sm font-semibold px-6 py-3.5" style={{ borderColor: "var(--border)" }}>
+              Try Sample Invoice
+            </button>
+          </div>
+          <p className="mt-6 text-xs font-medium uppercase tracking-wide" style={{ color: "var(--muted)" }}>AI-powered · Structured output · Financial verification</p>
+        </div>
+        <div className="relative h-64 hidden sm:block">
+          <div className="floaty absolute left-2 top-2 w-64 rounded-2xl border bg-white p-4 shadow-lg" style={{ borderColor: "var(--border)" }}>
+            <div className="text-[11px] font-semibold mb-2 flex items-center gap-1.5" style={{ color: "var(--secondary)" }}><Icon name="sparkles" className="h-3.5 w-3.5" /> Extracted</div>
+            <pre className="mono text-[11px] leading-5">{`{\n  "vendor": "Acme Ltd",\n  "total": 29500,\n  "currency": "INR"\n}`}</pre>
+          </div>
+          <div className="floaty absolute bottom-4 right-2 flex items-center gap-2 rounded-full px-4 py-2.5 shadow" style={{ background: "var(--success-light)" }}>
+            <Icon name="check-circle-2" className="h-4 w-4" style={{ color: "var(--success)" }} />
+            <span className="text-sm font-semibold" style={{ color: "var(--success)" }}>Verified</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ProcessingState() {
+  const steps = ["Document uploaded", "Invoice structure detected", "Extracting financial information", "Reading line items", "Verifying calculations", "Preparing JSON"];
+  const [active, setActive] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setActive(a => (a < steps.length - 1 ? a + 1 : a)), 450);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div className="rounded-2xl border bg-white p-8 shadow-sm" style={{ borderColor: "var(--border)" }}>
+      <div className="flex items-center gap-3 mb-6">
+        <span className="h-10 w-10 rounded-full flex items-center justify-center" style={{ background: "var(--secondary-light)", color: "var(--secondary)" }}>
+          <Icon name="loader-2" className="h-5 w-5 animate-spin" />
+        </span>
+        <div>
+          <h3 className="font-semibold">Analyzing invoice</h3>
+          <p className="text-sm" style={{ color: "var(--muted)" }}>This usually takes a few seconds.</p>
+        </div>
+      </div>
+      <ul className="space-y-3">
+        {steps.map((s, i) => (
+          <li key={s} className="flex items-center gap-3 text-sm">
+            {i < active ? <Icon name="check-circle-2" className="h-4 w-4" style={{ color: "var(--success)" }} /> :
+             i === active ? <span className="h-2.5 w-2.5 rounded-full pulseSoft" style={{ background: "var(--secondary)" }} /> :
+             <Icon name="circle" className="h-4 w-4" style={{ color: "var(--border)" }} />}
+            <span style={{ fontWeight: i <= active ? 600 : 400, color: i === active ? "var(--secondary)" : i < active ? "var(--foreground)" : "var(--muted)" }}>{s}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function App() {
+  const [stage, setStage] = useState("upload"); // upload | processing | results
+  const [data, setData] = useState(null);
+  const [verification, setVerification] = useState(null);
+  const workspaceRef = useRef(null);
+
+  const scrollTo = () => workspaceRef.current?.scrollIntoView({ behavior: "smooth" });
+
+  const loadSample = () => {
+    scrollTo();
+    setStage("processing");
+    setTimeout(() => {
+      setData(SAMPLE);
+      setVerification(verify(SAMPLE));
+      setStage("results");
+    }, 2800);
+  };
+
+  const editField = (key, value) => {
+    setData(prev => {
+      const next = { ...prev, [key]: value };
+      setVerification(verify(next));
+      return next;
+    });
+  };
+
+  const reset = () => { setStage("upload"); setData(null); setVerification(null); };
+
+  const [copied, setCopied] = useState(false);
+  const copyJson = async () => {
+    try { await navigator.clipboard.writeText(JSON.stringify(data, null, 2)); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {}
+  };
+  const downloadJson = () => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "invoice-data.json"; a.click(); URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", paddingBottom: 40 }}>
+      <Header onUpload={scrollTo} />
+      <Hero onUpload={scrollTo} onSample={loadSample} />
+
+      <main ref={workspaceRef} className="max-w-6xl mx-auto px-6 pb-24 scroll-mt-20">
+        <div className="grid lg:grid-cols-2 gap-6">
+          <section className="space-y-5">
+            {stage === "upload" && (
+              <div className="rounded-2xl border-2 border-dashed p-14 text-center" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+                <span className="h-16 w-16 rounded-2xl bg-white shadow flex items-center justify-center mx-auto" style={{ color: "var(--primary)" }}>
+                  <Icon name="upload-cloud" className="h-8 w-8" />
+                </span>
+                <p className="mt-5 font-semibold">Drop your invoice here</p>
+                <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>or browse files</p>
+                <p className="mt-4 text-xs" style={{ color: "var(--muted)" }}>PNG, JPG, JPEG or PDF · Maximum 10 MB</p>
+                <button onClick={loadSample} className="mt-6 rounded-full text-white text-sm font-semibold px-5 py-2.5" style={{ background: "linear-gradient(90deg,var(--primary),var(--secondary))" }}>
+                  Try Sample Invoice
+                </button>
+                <p className="mt-4 text-xs" style={{ color: "var(--muted)" }}>
+                  Real uploads require the full app (this standalone page only demos the sample flow).
+                </p>
+              </div>
+            )}
+            {stage === "processing" && <ProcessingState />}
+            {stage === "results" && (
+              <div className="rounded-2xl border bg-white p-6 shadow-sm text-center" style={{ borderColor: "var(--border)" }}>
+                <Icon name="file-check-2" className="h-8 w-8 mx-auto" style={{ color: "var(--primary)" }} />
+                <p className="mt-3 text-sm font-medium">sample-invoice.png</p>
+                <p className="text-xs" style={{ color: "var(--muted)" }}>Demo document · not a real upload</p>
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-5">
+            {stage !== "results" && (
+              <div className="rounded-2xl border border-dashed p-10 text-center min-h-[320px] flex flex-col items-center justify-center" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+                <Icon name="file-json-2" className="h-8 w-8" style={{ color: "var(--secondary)" }} />
+                <p className="mt-4 text-sm max-w-xs" style={{ color: "var(--muted)" }}>Your extracted invoice data will appear here.</p>
+              </div>
+            )}
+
+            {stage === "results" && data && (
+              <div className="space-y-5">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold">Sample results</h2>
+                  <button onClick={reset} className="text-xs font-semibold rounded-full border px-3 py-1.5 flex items-center gap-1.5" style={{ borderColor: "var(--border)" }}>
+                    <Icon name="rotate-ccw" className="h-3.5 w-3.5" /> Start New Invoice
+                  </button>
+                </div>
+
+                <div className="rounded-2xl border bg-white p-6 shadow-sm" style={{ borderColor: "var(--border)" }}>
+                  <h3 className="text-sm font-semibold mb-4">Invoice Verification</h3>
+                  <ul className="space-y-2.5">
+                    {verification.checks.map(c => (
+                      <li key={c.id} className="flex items-center gap-2.5 text-sm">
+                        <Icon name={c.passed ? "check-circle-2" : c.severity === "error" ? "x-circle" : "alert-triangle"}
+                              className="h-4 w-4" style={{ color: c.passed ? "var(--success)" : c.severity === "error" ? "var(--danger)" : "var(--warning)" }} />
+                        <span>{c.label}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="mt-5 rounded-xl border px-4 py-3.5 flex items-center gap-3"
+                       style={{ borderColor: verification.status === "VERIFIED" ? "rgba(16,185,129,.25)" : "rgba(245,158,11,.25)",
+                                background: verification.status === "VERIFIED" ? "var(--success-light)" : "var(--warning-light)" }}>
+                    <Icon name={verification.status === "VERIFIED" ? "check-circle-2" : "alert-triangle"} className="h-5 w-5"
+                          style={{ color: verification.status === "VERIFIED" ? "var(--success)" : "var(--warning)" }} />
+                    <div>
+                      <p className="text-sm font-bold" style={{ color: verification.status === "VERIFIED" ? "var(--success)" : "var(--warning)" }}>
+                        {verification.status === "VERIFIED" ? "Invoice Verified" : "Needs Review"}
+                      </p>
+                      <p className="text-xs" style={{ color: "var(--muted)" }}>
+                        {verification.status === "VERIFIED" ? "Financial checks passed." : "Some fields or calculations need a second look."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border p-6" style={{ borderColor: "rgba(16,185,129,.25)", background: "linear-gradient(180deg,var(--success-light),white)" }}>
+                  <p className="text-xs font-semibold uppercase" style={{ color: "var(--muted)" }}>Total</p>
+                  <p className="text-3xl font-extrabold mt-1">{fmt(data.total, data.currency)}</p>
+                </div>
+
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {[["vendor","Vendor","var(--primary-light)"],["invoice_number","Invoice #","var(--secondary-light)"],
+                    ["invoice_date","Invoice Date","var(--accent-light)"],["due_date","Due Date","var(--warning-light)"],
+                    ["subtotal","Subtotal","var(--accent-light)"],["tax","Tax","var(--warning-light)"]].map(([key,label,tint]) => (
+                    <div key={key} className="rounded-xl border p-4" style={{ borderColor: "var(--border)", background: tint }}>
+                      <label className="text-xs font-semibold" style={{ color: "var(--muted)" }}>{label}</label>
+                      <input value={data[key] ?? ""} onChange={e => editField(key, e.target.value)}
+                             className="w-full mt-1.5 rounded-lg px-2.5 py-1.5 text-sm font-semibold bg-white/70 border border-transparent focus:border-[var(--primary)] focus:bg-white outline-none" />
+                    </div>
+                  ))}
+                </div>
+
+                <div className="rounded-2xl border bg-white overflow-hidden shadow-sm" style={{ borderColor: "var(--border)" }}>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs font-semibold uppercase" style={{ background: "var(--surface)", color: "var(--muted)" }}>
+                        <th className="px-5 py-3">Description</th><th className="px-5 py-3">Quantity</th><th className="px-5 py-3">Unit Price</th><th className="px-5 py-3">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.line_items.map((it,i) => (
+                        <tr key={i} className="border-t" style={{ borderColor: "var(--border)" }}>
+                          <td className="px-5 py-3.5 font-medium">{it.description}</td>
+                          <td className="px-5 py-3.5" style={{ color: "var(--muted)" }}>{it.quantity}</td>
+                          <td className="px-5 py-3.5" style={{ color: "var(--muted)" }}>{fmt(it.unit_price, data.currency)}</td>
+                          <td className="px-5 py-3.5 font-semibold">{fmt(it.total, data.currency)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="rounded-2xl border bg-white p-5 shadow-sm" style={{ borderColor: "var(--border)" }}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold">Structured JSON</h3>
+                    <div className="flex gap-2">
+                      <button onClick={copyJson} className="rounded-full border text-xs font-semibold px-3 py-1.5 flex items-center gap-1.5" style={{ borderColor: "var(--border)" }}>
+                        <Icon name={copied ? "check" : "copy"} className="h-3.5 w-3.5" style={{ color: copied ? "var(--success)" : undefined }} />
+                        {copied ? "Copied!" : "Copy JSON"}
+                      </button>
+                      <button onClick={downloadJson} className="rounded-full text-white text-xs font-semibold px-3 py-1.5 flex items-center gap-1.5" style={{ background: "var(--foreground)" }}>
+                        <Icon name="download" className="h-3.5 w-3.5" /> Download JSON
+                      </button>
+                    </div>
+                  </div>
+                  <pre className="mono text-[12.5px] leading-6 rounded-xl p-4 overflow-auto max-h-[380px]" style={{ background: "#131629", color: "#c8d3f5" }}>
+                    {JSON.stringify(data, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
