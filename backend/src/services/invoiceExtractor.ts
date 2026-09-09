@@ -117,11 +117,83 @@ class OpenAIProvider implements InvoiceExtractionProvider {
   }
 }
 
+/**
+ * Gemini's REST API takes the vision prompt as one of several "parts" in a
+ * single content block — a plain fetch() is enough, so this avoids pulling
+ * in a whole SDK for what is otherwise a two-call surface (generateContent).
+ */
+class GeminiProvider implements InvoiceExtractionProvider {
+  private apiKey: string;
+  private model: string;
+
+  constructor() {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === "your_api_key_here") {
+      throw new ExtractionError(
+        "GEMINI_API_KEY is not configured on the server. Set a real key in backend/.env to enable extraction."
+      );
+    }
+    this.apiKey = apiKey;
+    this.model = process.env.GEMINI_MODEL || "gemini-flash-latest";
+  }
+
+  async extract(file: { buffer: Buffer; mimetype: string }): Promise<unknown> {
+    const base64 = file.buffer.toString("base64");
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { text: `${EXTRACTION_SYSTEM_PROMPT}\n\nExtract the structured invoice data from this document.` },
+                { inline_data: { mime_type: file.mimetype, data: base64 } },
+              ],
+            },
+          ],
+          generationConfig: { temperature: 0, responseMimeType: "application/json" },
+        }),
+      });
+    } catch {
+      throw new ExtractionError("Could not reach the Gemini API. Check the server's network connection.");
+    }
+
+    if (!res.ok) {
+      if (res.status === 400 || res.status === 401 || res.status === 403) {
+        throw new ExtractionError(
+          "The Gemini API key configured on the server was rejected. Check GEMINI_API_KEY in backend/.env."
+        );
+      }
+      const body = await res.text().catch(() => "");
+      throw new ExtractionError(`AI provider error: ${res.status} ${body.slice(0, 300)}`);
+    }
+
+    const json = (await res.json()) as {
+      candidates?: { content?: { parts?: { text?: string }[] } }[];
+    };
+    const raw = json.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!raw) {
+      throw new ExtractionError("The AI provider returned an empty response.");
+    }
+
+    try {
+      return JSON.parse(raw);
+    } catch {
+      throw new ExtractionError("The AI provider returned a response that was not valid JSON.");
+    }
+  }
+}
+
 let providerInstance: InvoiceExtractionProvider | null = null;
 
 function getProvider(): InvoiceExtractionProvider {
   if (!providerInstance) {
-    providerInstance = new OpenAIProvider();
+    const providerName = (process.env.AI_PROVIDER || "openai").toLowerCase();
+    providerInstance = providerName === "gemini" ? new GeminiProvider() : new OpenAIProvider();
   }
   return providerInstance;
 }

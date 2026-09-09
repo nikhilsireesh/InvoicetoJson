@@ -45,9 +45,10 @@ offline).
 - Frontend: React + TypeScript + Vite + Tailwind CSS + Framer Motion + lucide-react
 - Backend: Node.js + Express + TypeScript
 - Validation: Zod
-- AI: OpenAI vision (`gpt-4o` by default) behind a provider interface so
-  Claude, Tesseract, or another vision model can be swapped in later
-  without touching routes or the verification engine
+- AI: pluggable vision provider (`AI_PROVIDER` env var) — OpenAI (`gpt-4o` by
+  default) or Gemini (`gemini-flash-latest` by default) — behind a provider
+  interface so another vision model can be swapped in later without
+  touching routes or the verification engine
 
 ## Architecture
 
@@ -100,13 +101,16 @@ cp backend/.env.example backend/.env
 ```
 
 ```
-OPENAI_API_KEY=your_api_key_here   # required for real extraction
+AI_PROVIDER=openai                 # optional — "openai" (default) or "gemini"
+OPENAI_API_KEY=your_api_key_here   # required for real extraction if AI_PROVIDER=openai
 OPENAI_MODEL=gpt-4o                # optional
+GEMINI_API_KEY=your_api_key_here   # required for real extraction if AI_PROVIDER=gemini
+GEMINI_MODEL=gemini-flash-latest   # optional
 PORT=5000                          # optional
 CORS_ORIGIN=http://localhost:5173  # optional, for non-default frontend origins
 ```
 
-The frontend never sees this key — all AI calls happen server-side in
+The frontend never sees these keys — all AI calls happen server-side in
 `backend/src/services/invoiceExtractor.ts`.
 
 ## Running the project
@@ -187,8 +191,8 @@ Status is `VERIFIED` only if every error-level check passes; otherwise
 
 ## Security
 
-- `OPENAI_API_KEY` lives only in `backend/.env`, read via `dotenv`, and is
-  never sent to or embedded in the frontend bundle.
+- `OPENAI_API_KEY` / `GEMINI_API_KEY` live only in `backend/.env`, read via
+  `dotenv`, and are never sent to or embedded in the frontend bundle.
 - `.env` is gitignored; only `.env.example` (no real key) is committed.
 - Uploaded files are validated by extension, MIME type, and size, kept in
   memory only (`multer.memoryStorage()`), used once for the extraction

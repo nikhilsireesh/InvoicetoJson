@@ -42,7 +42,10 @@ app.use(
 );
 
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, aiConfigured: !!process.env.OPENAI_API_KEY });
+  const provider = (process.env.AI_PROVIDER || "openai").toLowerCase();
+  const aiConfigured =
+    provider === "gemini" ? !!process.env.GEMINI_API_KEY : !!process.env.OPENAI_API_KEY;
+  res.json({ ok: true, provider, aiConfigured });
 });
 
 app.use("/api", extractRouter);
