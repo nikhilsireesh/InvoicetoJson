@@ -140,39 +140,59 @@ class GeminiProvider implements InvoiceExtractionProvider {
   async extract(file: { buffer: Buffer; mimetype: string }): Promise<unknown> {
     const base64 = file.buffer.toString("base64");
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
-
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: `${EXTRACTION_SYSTEM_PROMPT}\n\nExtract the structured invoice data from this document.` },
-                { inline_data: { mime_type: file.mimetype, data: base64 } },
-              ],
-            },
+    const body = JSON.stringify({
+      contents: [
+        {
+          parts: [
+            { text: `${EXTRACTION_SYSTEM_PROMPT}\n\nExtract the structured invoice data from this document.` },
+            { inline_data: { mime_type: file.mimetype, data: base64 } },
           ],
-          generationConfig: { temperature: 0, responseMimeType: "application/json" },
-        }),
-      });
-    } catch {
-      throw new ExtractionError("Could not reach the Gemini API. Check the server's network connection.");
+        },
+      ],
+      generationConfig: { temperature: 0, responseMimeType: "application/json" },
+    });
+
+    // Gemini's free-tier flash models return 503 "high demand" / 429 rate
+    // limit fairly often under normal load — retrying a couple of times
+    // with a short backoff clears most of them instead of failing the
+    // whole upload on a blip the very next request would have sailed
+    // through.
+    const MAX_ATTEMPTS = 3;
+    let res: Response | undefined;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+        });
+      } catch {
+        throw new ExtractionError("Could not reach the Gemini API. Check the server's network connection.");
+      }
+
+      const isRetryable = res.status === 503 || res.status === 429;
+      if (res.ok || !isRetryable || attempt === MAX_ATTEMPTS) break;
+      await new Promise((resolve) => setTimeout(resolve, attempt * 800));
     }
 
-    if (!res.ok) {
-      if (res.status === 400 || res.status === 401 || res.status === 403) {
+    const finalRes = res!; // always assigned: the loop always runs at least once
+
+    if (!finalRes.ok) {
+      if (finalRes.status === 400 || finalRes.status === 401 || finalRes.status === 403) {
         throw new ExtractionError(
           "The Gemini API key configured on the server was rejected. Check GEMINI_API_KEY in backend/.env."
         );
       }
-      const body = await res.text().catch(() => "");
-      throw new ExtractionError(`AI provider error: ${res.status} ${body.slice(0, 300)}`);
+      if (finalRes.status === 503 || finalRes.status === 429) {
+        throw new ExtractionError(
+          "The Gemini API is currently overloaded. This is temporary on Google's side — please try again in a moment."
+        );
+      }
+      const errBody = await finalRes.text().catch(() => "");
+      throw new ExtractionError(`AI provider error: ${finalRes.status} ${errBody.slice(0, 300)}`);
     }
 
-    const json = (await res.json()) as {
+    const json = (await finalRes.json()) as {
       candidates?: { content?: { parts?: { text?: string }[] } }[];
     };
     const raw = json.candidates?.[0]?.content?.parts?.[0]?.text;
